@@ -1,0 +1,248 @@
+// react hooks
+import { useState, useEffect } from "react";
+import "./App.css"; 
+// converts text to html
+import ReactMarkdown from "react-markdown";
+import Footer from "./Footer";
+import ShareButtons from "./components/ShareButtons";
+import { FaMicrophone, FaPaperPlane, FaVolumeUp } from "react-icons/fa";
+import stringSimilarity from "string-similarity";
+
+// Pre-trained questions and answers
+const preTrainedData = {
+  "college name":"Government engineering college hassan",
+  "college timings":"The college operates from 9:00 AM to 5:00 PM, Monday to Friday.",
+  "courses offered": "We offer courses in Computer Science, Electronics, Mechanical, and Civil Engineering.",
+  "principal college": "The principal is Girish D P",
+  "contact administration": "You can contact the administration at admin@college.edu or call 123-456-7890.",
+  "college location of gech": "The college is located at Dairy Circle Hassan.",
+  "TPO Officer":"Dr vasanthakumar",
+  "Hod of Cs":"Dr Vani v g",
+  "faculties of cs dept":"Dr Vasanthakumara,Dr Theerthegowda,Dr vani,Kiran,shaylaja,Manasa,Gowrish,Mahendra",
+  "placement cell no":"101",
+  "placement co-ordinator":"Rakshith g m",
+  "placement officer email":"cmn.vasanth@gmail.com",
+  "placement office contact":"9902677199",
+  "principal email":"principal@gechassan.ac.in",
+  "Total number of students in 4th year Cs":"72",
+  "College club":"Compass",
+  "Computer science clubs":"ISTE,GLUE",
+  "cutoff rank for cs in 2024":"20000",
+  "SYS admin of Glue":"Akhilesh and Chaitra",
+  "social media handler of Glue":"shashank raj",
+  "documentation head of Glue":"Ayyappa and Pooja hegde",
+  "Lab incharge of Glue":"Sharanbasava and swathi",
+  "Treasurer of Glue":"Varun",
+  "session handler of Glue":"Niranjan and thejas",
+  "Speakers of glue":"Arbiya,mithun k r,mithun l m, sindhu raj and hemanth kumar",
+  "President of compass":"Noel Antony lobo and lekhana b m",
+  "Vice-President of compass":"Rakshith g m abd ayyappa hunsinkatte",
+  "secretary of compass":"Surabhi j u and pruthvi raj",
+  "treasurer of compass":"Adarsh and sinchana ss",
+  "documentation of compass":"omkar and kavya h m",
+  "social media handler of compass":"vaishnavi b and rakshitha b m",
+  "announcement of compass":"b r adithya and jahnvi s",
+  "session incharge of compass":"Sudeep L and purushotham h d, bhagyalakshmi r",
+  "President of ISTE":"Shreenidhi r s",
+  "Vice-President of ISTE":"Darshan r b",
+  "secretary of ISTE":"Nandini",
+  "treasurer of ISTE":"Mithun l m",
+  "Promotion team of ISTE":"Chaitra hs,harshitha d, akhilesh shetty and harshitha s k",
+  "Social media handler of ISTE":"Mithun k r,rajas gowda and shashank raj",
+  "co-ordinators of ISTE in cse":"Lekhana b m and Ayyappa",
+  "Documentation of ISTE":"Rakshitha h g and Arbiya",
+  "CR names of 3rd year":"Sinchana ss and Aditya",
+  "CR names of 4th year":"Surabhi J u and Ayyappa",
+  "4th year CR contact no":"8310876797 and 9844019171",
+  "3rd year CR contact no":"6363948867 and 6364241959",
+  "2nd year CR contact no":"7090960703 and 9934821093",
+  "1st year CR contact no":"8310876797 and 8354019873",
+};
+
+// List of stop words to ignore to improve question matching.
+const stopWords = [
+  "what", "are", "the", "is", "and", "or", "in", "of", "to", "from", "how", "can", "i", "you", "at", "your"
+];
+
+// Function to normalize text (remove spaces, punctuation, stop words, and make lowercase)
+const normalizeText = (text) => {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "") // Remove punctuation
+    .replace(/\s+/g, " ") // Replace multiple spaces with a single space
+    .trim()
+    .split(" ") // Split into words
+    .filter((word) => !stopWords.includes(word)) // Remove stop words
+    .join(" "); // Rejoin filtered words into a string
+};
+
+function App() {
+  const [question, setQuestion] = useState("");
+  const [chatHistory, setChatHistory] = useState([]);
+  // tracks if the app is listening for voice input
+  const [isListening, setIsListening] = useState(false);
+  const [recognition, setRecognition] = useState(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  useEffect(() => {
+    if ("webkitSpeechRecognition" in window) {
+      const recognitionInstance = new webkitSpeechRecognition();
+      recognitionInstance.continuous = false;
+      recognitionInstance.interimResults = false;
+      recognitionInstance.lang = "en-US";
+
+      recognitionInstance.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setQuestion(transcript);
+        setIsListening(false);
+      };
+
+      recognitionInstance.onerror = (event) => {
+        console.error("Speech recognition error:", event.error);
+        setIsListening(false);
+      };
+
+      recognitionInstance.onend = () => {
+        setIsListening(false);
+      };
+
+      setRecognition(recognitionInstance);
+    } else {
+      console.warn("Speech recognition is not supported in this browser.");
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (recognition) {
+      if (isListening) {
+        recognition.stop();
+        setIsListening(false);
+      } else {
+        recognition.start();
+        setIsListening(true);
+      }
+    } else {
+      alert("Speech recognition is not supported in your browser.");
+    }
+  };
+
+  const toggleSpeaking = (text) => {
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    } else {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "en-US";
+      utterance.onend = () => setIsSpeaking(false);
+      setIsSpeaking(true);
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  const generateAnswer = (e) => {
+    e.preventDefault();
+    if (!question.trim()) return;
+
+    const normalizedQuestion = normalizeText(question); // Normalize the input
+    const preTrainedKeys = Object.keys(preTrainedData).map(normalizeText);
+
+    // Find the best match using fuzzy matching
+    const matches = stringSimilarity.findBestMatch(
+      normalizedQuestion,
+      preTrainedKeys
+    );
+
+    const bestMatchIndex = matches.bestMatchIndex;
+    const bestMatchScore = matches.bestMatch.rating;
+    const matchThreshold = 0.6; // Minimum similarity threshold
+
+    const response =
+      bestMatchScore >= matchThreshold
+        ? preTrainedData[Object.keys(preTrainedData)[bestMatchIndex]]
+        : "I don’t have access to this question.";
+
+    setChatHistory((prevChat) => [
+      ...prevChat,
+      { type: "question", text: question },
+      { type: "answer", text: response },
+    ]);
+    setQuestion("");
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen bg-gradient-to-r from-gray-950 via-gray-900 to-gray-950 text-white">
+      <h1 className="text-5xl font-bold text-blue-400 mt-10 mb-2 text-center">
+        CollegeMate AI
+      </h1>
+      <p className="text-md text-gray-400 text-center mb-10">
+        Your college assistant at your fingertips
+      </p>
+      <div className="flex-grow p-6 overflow-auto">
+        <div className="chat-box max-w-3xl mx-auto bg-gray-900 rounded-lg shadow-lg p-4 mt-10">
+          <p className="text-lg text-gray-400 text-left">How may I help you?</p>
+          <div className="chat-display space-y-4 mb-4">
+            {chatHistory.map((chat, index) => (
+              <div
+                key={index}
+                className={`p-4 rounded-lg ${
+                  chat.type === "question"
+                    ? "bg-blue-500 text-white self-end text-right w-fit max-w-[80%] ml-auto"
+                    : "bg-gray-700 text-white self-start text-left w-fit max-w-[80%] ml-4 overflow-x-scroll"
+                }`}
+              >
+                <ReactMarkdown>{chat.text}</ReactMarkdown>
+                {chat.type === "answer" && (
+                  <div className="flex justify-end mt-2 space-x-2">
+                    <button
+                      onClick={() => toggleSpeaking(chat.text)}
+                      className="flex items-center text-white mt-2 mr-2"
+                    >
+                      <FaVolumeUp className="mr-1" />
+                      Speak
+                    </button>
+                    <ShareButtons answer={chat.text} />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <form
+            onSubmit={generateAnswer}
+            className="flex items-center w-full bg-gray-800 p-3 rounded-lg shadow-md"
+          >
+            <textarea
+              required
+              className="border border-gray-700 bg-gray-800 text-white rounded-lg w-full p-2 h-12 resize-none focus:border-blue-500 outline-none"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="Ask your college assistant..."
+            />
+            <div className="flex items-center space-x-2 ml-4">
+              {recognition && (
+                <button
+                  type="button"
+                  onClick={toggleListening}
+                  className={`p-2 rounded-full transition-transform duration-300 ease-in-out ${
+                    isListening ? "bg-red-500 flicker" : "bg-blue-500"
+                  } hover:opacity-80`}
+                >
+                  <FaMicrophone className="text-white" />
+                </button>
+              )}
+              <button
+                type="submit"
+                className="p-2 rounded-full bg-blue-600 hover:bg-blue-700"
+              >
+                <FaPaperPlane className="text-white" />
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <Footer />
+    </div>
+  );
+}
+
+export default App;
